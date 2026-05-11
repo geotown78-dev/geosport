@@ -67,18 +67,36 @@ export default function WatchPage() {
     setLoading(false);
   }
 
-  async function incrementViewers() { if (id) await supabase.rpc('increment_viewer_count', { stream_id: id }); }
-  async function decrementViewers() { if (id) await supabase.rpc('decrement_viewer_count', { stream_id: id }); }
+  async function incrementViewers() { 
+    if (id) {
+      try {
+        await supabase.rpc('increment_viewer_count', { stream_id: id });
+      } catch (e) {
+        console.warn("Viewer increment failed (RPC likely missing):", e);
+      }
+    }
+  }
+  async function decrementViewers() { 
+    if (id) {
+      try {
+        await supabase.rpc('decrement_viewer_count', { stream_id: id });
+      } catch (e) {
+        console.warn("Viewer decrement failed (RPC likely missing):", e);
+      }
+    }
+  }
 
-  function connectToBroadcaster(broadcasterPeerId: string) {
+  function connectToBroadcaster(broadcasterPeerId: string, retryCount = 0) {
     if (connectionStatus === "connected" && peerRef.current) return;
     
     // Explicit cleanup
     if (peerRef.current) {
       peerRef.current.destroy();
+      peerRef.current = null;
     }
 
     setConnectionStatus("connecting");
+    console.log(`Connecting to broadcaster: ${broadcasterPeerId} (Attempt ${retryCount + 1})`);
     
     // Initialize PeerJS
     const peer = new Peer({
@@ -86,6 +104,7 @@ export default function WatchPage() {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
         ]
       }
     });
@@ -96,37 +115,64 @@ export default function WatchPage() {
       console.log("Viewer peer opened with ID:", uid);
       
       // Attempt to call the broadcaster
-      // We pass a dummy stream if needed, but for receiving, empty is usually okay
       const call = peer.call(broadcasterPeerId, new MediaStream());
       
+      // Set a timeout for the call to connect
+      const timeout = setTimeout(() => {
+        if (connectionStatus !== "connected") {
+          console.warn("Call timeout - no stream received yet");
+          if (retryCount < 5) {
+            peer.destroy();
+            setTimeout(() => connectToBroadcaster(broadcasterPeerId, retryCount + 1), 2000);
+          } else {
+            setConnectionStatus("error");
+          }
+        }
+      }, 10000);
+
       call.on('stream', (remoteStream) => {
-        console.log("Remote stream received!");
+        clearTimeout(timeout);
+        console.log("Remote stream received successfully!");
         if (videoRef.current) {
           videoRef.current.srcObject = remoteStream;
+          // Use then to handle potential chrome autoplay policy
+          videoRef.current.play().catch(e => console.warn("Video play failed:", e));
           setConnectionStatus("connected");
         }
       });
 
       call.on('error', (err) => {
+        clearTimeout(timeout);
         console.error("Call error:", err);
-        setConnectionStatus("error");
+        if (retryCount < 5) {
+          peer.destroy();
+          setTimeout(() => connectToBroadcaster(broadcasterPeerId, retryCount + 1), 3000);
+        } else {
+          setConnectionStatus("error");
+        }
       });
 
       call.on('close', () => {
-        console.log("Call closed");
+        clearTimeout(timeout);
+        console.log("Call closed by remote peer");
         setConnectionStatus("disconnected");
       });
     });
 
     peer.on('error', (err) => {
-      console.error("PeerJS error:", err);
+      console.error("PeerJS registration error:", err);
+      if (err.type === 'peer-unavailable' || err.type === 'network') {
+        if (retryCount < 10) {
+           setTimeout(() => connectToBroadcaster(broadcasterPeerId, retryCount + 1), 5000);
+           return;
+        }
+      }
       setConnectionStatus("error");
-      // If the broadcaster is not found yet, we might want to retry later
     });
 
     peer.on('disconnected', () => {
-      console.log("Peer disconnected from server");
-      setConnectionStatus("disconnected");
+      console.log("Peer server connection lost");
+      peer.reconnect();
     });
   }
 
