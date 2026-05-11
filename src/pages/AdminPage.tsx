@@ -31,6 +31,13 @@ export default function AdminPage({ user }: { user: any }) {
       navigate("/login");
       return;
     }
+    
+    // Hardcoded Admin Check
+    if (user.email !== "admin@geosport.ge") {
+      navigate("/");
+      return;
+    }
+
     fetchStreams();
     return () => stopBroadcasting();
   }, [user]);
