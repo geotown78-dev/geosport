@@ -11,6 +11,7 @@ import HomePage from "./pages/HomePage";
 import AdminPage from "./pages/AdminPage";
 import WatchPage from "./pages/WatchPage";
 import LoginPage from "./pages/LoginPage";
+import SignupPage from "./pages/SignupPage";
 import { supabase } from "./lib/supabase";
 
 export default function App() {
@@ -62,9 +63,14 @@ export default function App() {
                 Sign Out
               </button>
             ) : (
-              <Link to="/login" className="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">
-                Login
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link to="/login" className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border border-slate-700">
+                  Login
+                </Link>
+                <Link to="/signup" className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">
+                  Signup
+                </Link>
+              </div>
             )}
             
             <button className="md:hidden" onClick={() => setIsMenuOpen(!isMenuOpen)}>
@@ -95,7 +101,10 @@ export default function App() {
               {user ? (
                 <button onClick={() => { supabase.auth.signOut(); setIsMenuOpen(false); }} className="text-2xl font-bold text-red-500 text-left">Logout</button>
               ) : (
-                <Link to="/login" onClick={() => setIsMenuOpen(false)} className="text-2xl font-bold text-red-500 pb-4">Login</Link>
+                <>
+                  <Link to="/login" onClick={() => setIsMenuOpen(false)} className="text-2xl font-bold text-red-500 border-b border-slate-800 pb-4">Login</Link>
+                  <Link to="/signup" onClick={() => setIsMenuOpen(false)} className="text-2xl font-bold text-red-500">Signup</Link>
+                </>
               )}
             </div>
           )}
@@ -107,6 +116,7 @@ export default function App() {
               <Route path="/admin" element={<AdminPage user={user} />} />
               <Route path="/watch/:id" element={<WatchPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/signup" element={<SignupPage />} />
             </Routes>
           </main>
         </div>
