@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { Stream, StreamStatus } from "../constants";
 import { motion, AnimatePresence } from "motion/react";
-import { Users, Radio, Info, MessageSquare, Heart, Share2, Play, AlertCircle, ChevronLeft, Calendar, Database, ShieldCheck, Zap } from "lucide-react";
+import { Users, Radio, Info, MessageSquare, Heart, Share2, Play, AlertCircle, ChevronLeft, Calendar, Database, ShieldCheck, Zap, Mic, MicOff } from "lucide-react";
 import Peer from "peerjs";
 import { cn } from "../lib/utils";
 
@@ -17,6 +17,7 @@ export default function WatchPage() {
   const peerRef = useRef<Peer | null>(null);
   const [viewerPeerId, setViewerPeerId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected" | "error">("disconnected");
+  const [isMuted, setIsMuted] = useState(true);
 
   useEffect(() => {
     if (id) {
@@ -105,6 +106,8 @@ export default function WatchPage() {
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
         ]
       }
     });
@@ -114,49 +117,57 @@ export default function WatchPage() {
       setViewerPeerId(uid);
       console.log("Viewer peer opened with ID:", uid);
       
-      // Attempt to call the broadcaster
-      const call = peer.call(broadcasterPeerId, new MediaStream());
-      
-      // Set a timeout for the call to connect
-      const timeout = setTimeout(() => {
-        if (connectionStatus !== "connected") {
-          console.warn("Call timeout - no stream received yet");
+      // Delay call slightly to ensure broadcaster peer is fully registered on server
+      setTimeout(() => {
+        if (!peerRef.current || peer.destroyed) return;
+        
+        console.log("Initiating call to broadcaster:", broadcasterPeerId);
+        // We pass a dummy stream for receiving
+        const call = peer.call(broadcasterPeerId, new MediaStream());
+        
+        // Set a timeout for the call to connect
+        const timeout = setTimeout(() => {
+          if (connectionStatus !== "connected") {
+            console.warn("Call timeout - no stream received yet");
+            if (retryCount < 5) {
+              if (peerRef.current) peerRef.current.destroy();
+              setTimeout(() => connectToBroadcaster(broadcasterPeerId, retryCount + 1), 2000);
+            } else {
+              setConnectionStatus("error");
+            }
+          }
+        }, 12000);
+  
+        call.on('stream', (remoteStream) => {
+          clearTimeout(timeout);
+          console.log("Remote signal locked. Feeding data to video buffer...");
+          if (videoRef.current) {
+            videoRef.current.srcObject = remoteStream;
+            videoRef.current.play().catch(e => {
+              console.warn("Autoplay blocked, user interaction required:", e);
+              // Fallback: the user might need to click something, but usually muted works
+            });
+            setConnectionStatus("connected");
+          }
+        });
+  
+        call.on('error', (err) => {
+          clearTimeout(timeout);
+          console.error("Call error:", err);
           if (retryCount < 5) {
-            peer.destroy();
-            setTimeout(() => connectToBroadcaster(broadcasterPeerId, retryCount + 1), 2000);
+            if (peerRef.current) peerRef.current.destroy();
+            setTimeout(() => connectToBroadcaster(broadcasterPeerId, retryCount + 1), 3000);
           } else {
             setConnectionStatus("error");
           }
-        }
-      }, 10000);
-
-      call.on('stream', (remoteStream) => {
-        clearTimeout(timeout);
-        console.log("Remote stream received successfully!");
-        if (videoRef.current) {
-          videoRef.current.srcObject = remoteStream;
-          // Use then to handle potential chrome autoplay policy
-          videoRef.current.play().catch(e => console.warn("Video play failed:", e));
-          setConnectionStatus("connected");
-        }
-      });
-
-      call.on('error', (err) => {
-        clearTimeout(timeout);
-        console.error("Call error:", err);
-        if (retryCount < 5) {
-          peer.destroy();
-          setTimeout(() => connectToBroadcaster(broadcasterPeerId, retryCount + 1), 3000);
-        } else {
-          setConnectionStatus("error");
-        }
-      });
-
-      call.on('close', () => {
-        clearTimeout(timeout);
-        console.log("Call closed by remote peer");
-        setConnectionStatus("disconnected");
-      });
+        });
+  
+        call.on('close', () => {
+          clearTimeout(timeout);
+          console.log("Call closed by remote peer. Stream likely ended or interrupted.");
+          setConnectionStatus("disconnected");
+        });
+      }, 1000);
     });
 
     peer.on('error', (err) => {
@@ -206,7 +217,39 @@ export default function WatchPage() {
           <div className="relative aspect-video bg-black/80 overflow-hidden group">
             {stream.status === StreamStatus.LIVE ? (
               <>
-                <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover grayscale-[0.1]" />
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted={isMuted}
+                  className="w-full h-full object-cover grayscale-[0.1]" 
+                />
+                
+                {/* HUD Overlays */}
+                <div className="absolute top-4 left-4 flex items-center gap-2 pointer-events-none">
+                  <div className="flex items-center gap-1.5 bg-red-600 px-2 py-0.5 rounded-sm text-[8px] font-black uppercase shadow-lg shadow-red-950/40 animate-pulse">
+                    <div className="w-1 h-1 bg-white rounded-full" />
+                    <span>Real-Time Feed</span>
+                  </div>
+                  <div className="bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-sm text-[8px] font-black uppercase border border-white/10 tracking-widest text-slate-300">
+                    Source: GEO_LOCAL_RELAY
+                  </div>
+                </div>
+
+                {/* Control Bar */}
+                <div className="absolute bottom-6 right-6 flex items-center gap-3">
+                  <button 
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="p-3 bg-black/60 backdrop-blur-md border border-white/10 rounded-full hover:bg-red-600/20 transition-all group"
+                  >
+                    {isMuted ? (
+                      <MicOff className="w-4 h-4 text-slate-400 group-hover:text-red-500" />
+                    ) : (
+                      <Mic className="w-4 h-4 text-blue-400" />
+                    )}
+                  </button>
+                </div>
+
                 <AnimatePresence>
                   {connectionStatus !== "connected" && (
                     <motion.div initial={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-[#0A0A0A]/90 backdrop-blur-sm flex flex-col items-center justify-center space-y-4">
@@ -236,17 +279,6 @@ export default function WatchPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-                
-                {/* HUD Overlays */}
-                <div className="absolute top-4 left-4 flex items-center gap-2">
-                  <div className="flex items-center gap-1.5 bg-red-600 px-2 py-0.5 rounded-sm text-[8px] font-black uppercase shadow-lg shadow-red-950/40 animate-pulse">
-                    <div className="w-1 h-1 bg-white rounded-full" />
-                    <span>Real-Time Feed</span>
-                  </div>
-                  <div className="bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-sm text-[8px] font-black uppercase border border-white/10 tracking-widest text-slate-300">
-                    Source: GEO_LOCAL_RELAY
-                  </div>
-                </div>
               </>
             ) : stream.status === StreamStatus.SCHEDULED ? (
               <div className="w-full h-full flex flex-col items-center justify-center p-12 bg-gradient-to-br from-slate-900 to-black">
