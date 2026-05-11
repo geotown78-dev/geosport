@@ -153,6 +153,9 @@ export default function AdminPage({ user }: { user: any }) {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
           ]
         }
       });
@@ -182,16 +185,33 @@ export default function AdminPage({ user }: { user: any }) {
 
       peer.on('error', (err) => {
         console.error('Admin Peer error:', err);
-        // Only stop if it's a fatal error
-        if (err.type === 'server-error' || err.type === 'network') {
-          stopBroadcasting();
-          alert("კავშირის პრობლემა: " + err.message);
+        if (err.type === 'server-error' || err.type === 'network' || err.type === 'peer-unavailable') {
+          console.warn("Recoverable or semi-fatal peer error, attempting to maintain session...");
+        }
+        
+        // Handle potentially fatal socket issues
+        if (err.type === 'socket-closed' || err.type === 'socket-error' || err.type === 'unavailable-id') {
+           stopBroadcasting();
+           alert("კავშირის პრობლემა: " + err.message);
         }
       });
 
+      peer.on('disconnected', () => {
+        console.log("Admin Peer disconnected from server, attempting reconnect...");
+        peer.reconnect();
+      });
+
       peer.on('call', (call) => {
+        console.log("Incoming call from:", call.peer);
         if (streamRef.current) {
+          console.log("Answering call with local stream");
           call.answer(streamRef.current);
+          
+          call.on('error', (err) => {
+            console.error("Call error for peer", call.peer, ":", err);
+          });
+        } else {
+          console.error("Received call but no streamRef.current available!");
         }
       });
 
