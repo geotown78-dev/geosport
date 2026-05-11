@@ -1,0 +1,9 @@
+{
+  "name": "GeoSport Live",
+  "description": "სპორტული ტრანსლაციების პლატფორმა. Admin-ს შეუძლია პირდაპირ გაუშვას ლაივები, ხოლო მომხმარებლებს შეუძლიათ თვალყური ადევნონ მათ.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
