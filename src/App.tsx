@@ -85,9 +85,10 @@ export default function App() {
             <Link to="/" className="p-2 text-slate-500 hover:text-slate-200 hover:bg-white/5 rounded transition-all">
               <Home className="w-6 h-6" />
             </Link>
-            {user?.email === "admin@geosport.ge" && (
-              <Link to="/admin" className="p-2 text-blue-500 bg-blue-500/10 rounded-lg shadow-sm">
+            {user?.email && ["admin@geosport.ge", "geotowng@gmail.com"].includes(user.email) && (
+              <Link to="/admin" className="p-2 text-blue-500 bg-blue-500/10 rounded-lg shadow-sm group relative" title="Admin Dashboard">
                 <LayoutGrid className="w-6 h-6" />
+                <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[8px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap uppercase">Admin Panel</span>
               </Link>
             )}
             <Link to="/login" className="p-2 text-slate-500 hover:text-slate-200 hover:bg-white/5 rounded mt-auto">
@@ -99,8 +100,8 @@ export default function App() {
           {isMenuOpen && (
             <div className="md:hidden absolute inset-0 z-40 bg-black/95 flex flex-col p-8 pt-20 gap-6">
               <Link to="/" onClick={() => setIsMenuOpen(false)} className="text-2xl font-bold border-b border-slate-800 pb-4">Home</Link>
-              {user?.email === "admin@geosport.ge" && (
-                <Link to="/admin" onClick={() => setIsMenuOpen(false)} className="text-2xl font-bold border-b border-slate-800 pb-4">Admin Dashboard</Link>
+              {user?.email && ["admin@geosport.ge", "geotowng@gmail.com"].includes(user.email) && (
+                <Link to="/admin" onClick={() => setIsMenuOpen(false)} className="text-2xl font-bold border-b border-slate-800 pb-4 text-blue-500">Admin Dashboard</Link>
               )}
               {user ? (
                 <button onClick={() => { supabase.auth.signOut(); setIsMenuOpen(false); }} className="text-2xl font-bold text-red-500 text-left">Logout</button>
