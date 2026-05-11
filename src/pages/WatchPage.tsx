@@ -15,6 +15,7 @@ export default function WatchPage() {
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const peerRef = useRef<Peer | null>(null);
+  const [viewerPeerId, setViewerPeerId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected" | "error">("disconnected");
 
   useEffect(() => {
@@ -25,6 +26,7 @@ export default function WatchPage() {
       const channel = supabase
         .channel(`stream-${id}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'streams', filter: `id=eq.${id}` }, (payload) => {
+          console.log("Stream update received:", payload.new);
           setStream(payload.new as Stream);
         })
         .subscribe();
@@ -32,23 +34,36 @@ export default function WatchPage() {
       return () => {
         decrementViewers();
         supabase.removeChannel(channel);
-        if (peerRef.current) peerRef.current.destroy();
+        if (peerRef.current) {
+          peerRef.current.destroy();
+          peerRef.current = null;
+        }
       };
     }
   }, [id]);
 
   useEffect(() => {
     if (stream?.status === StreamStatus.LIVE && stream.peer_id) {
+      console.log("Attempting to connect to peer:", stream.peer_id);
       connectToBroadcaster(stream.peer_id);
-    } else {
+    } else if (stream?.status === StreamStatus.ENDED) {
       setConnectionStatus("disconnected");
+      if (peerRef.current) {
+        peerRef.current.destroy();
+        peerRef.current = null;
+      }
     }
   }, [stream?.status, stream?.peer_id]);
 
   async function fetchStream() {
-    const { data, error } = await supabase.from('streams').select('*').eq('id', id).single();
-    if (error) setError("Signal lost or stream does not exist");
-    else setStream(data);
+    try {
+      const { data, error } = await supabase.from('streams').select('*').eq('id', id).single();
+      if (error) setError("Signal lost or stream does not exist");
+      else setStream(data);
+    } catch (e) {
+      console.error("Fetch stream error:", e);
+      setError("Failed to connect to data source");
+    }
     setLoading(false);
   }
 
@@ -56,23 +71,63 @@ export default function WatchPage() {
   async function decrementViewers() { if (id) await supabase.rpc('decrement_viewer_count', { stream_id: id }); }
 
   function connectToBroadcaster(broadcasterPeerId: string) {
-    if (connectionStatus === "connected") return;
+    if (connectionStatus === "connected" && peerRef.current) return;
+    
+    // Explicit cleanup
+    if (peerRef.current) {
+      peerRef.current.destroy();
+    }
+
     setConnectionStatus("connecting");
-    const peer = new Peer();
+    
+    // Initialize PeerJS
+    const peer = new Peer({
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ]
+      }
+    });
     peerRef.current = peer;
 
     peer.on('open', (uid) => {
+      setViewerPeerId(uid);
+      console.log("Viewer peer opened with ID:", uid);
+      
+      // Attempt to call the broadcaster
+      // We pass a dummy stream if needed, but for receiving, empty is usually okay
       const call = peer.call(broadcasterPeerId, new MediaStream());
+      
       call.on('stream', (remoteStream) => {
+        console.log("Remote stream received!");
         if (videoRef.current) {
           videoRef.current.srcObject = remoteStream;
           setConnectionStatus("connected");
         }
       });
-      call.on('error', () => setConnectionStatus("error"));
-      call.on('close', () => setConnectionStatus("disconnected"));
+
+      call.on('error', (err) => {
+        console.error("Call error:", err);
+        setConnectionStatus("error");
+      });
+
+      call.on('close', () => {
+        console.log("Call closed");
+        setConnectionStatus("disconnected");
+      });
     });
-    peer.on('error', () => setConnectionStatus("error"));
+
+    peer.on('error', (err) => {
+      console.error("PeerJS error:", err);
+      setConnectionStatus("error");
+      // If the broadcaster is not found yet, we might want to retry later
+    });
+
+    peer.on('disconnected', () => {
+      console.log("Peer disconnected from server");
+      setConnectionStatus("disconnected");
+    });
   }
 
   if (loading) return (
@@ -109,8 +164,29 @@ export default function WatchPage() {
                 <AnimatePresence>
                   {connectionStatus !== "connected" && (
                     <motion.div initial={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-[#0A0A0A]/90 backdrop-blur-sm flex flex-col items-center justify-center space-y-4">
-                       <Zap className="w-10 h-10 text-red-600 animate-bounce" />
-                       <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">Establishing Signal Link...</p>
+                       {connectionStatus === "error" ? (
+                         <>
+                           <AlertCircle className="w-10 h-10 text-red-600" />
+                           <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">Signal Interrupted</p>
+                           <button 
+                             onClick={() => stream?.peer_id && connectToBroadcaster(stream.peer_id)}
+                             className="px-4 py-2 bg-red-600 text-white text-[9px] font-black uppercase rounded mt-4 hover:bg-red-700 transition-colors"
+                           >
+                             Retry Connection
+                           </button>
+                           <button 
+                             onClick={() => fetchStream()}
+                             className="text-[8px] font-black uppercase text-slate-500 hover:text-white transition-colors mt-2"
+                           >
+                             Refresh Metadata [F5]
+                           </button>
+                         </>
+                       ) : (
+                         <>
+                           <Zap className="w-10 h-10 text-red-600 animate-bounce" />
+                           <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">Establishing Signal Link...</p>
+                         </>
+                       )}
                     </motion.div>
                   )}
                 </AnimatePresence>
