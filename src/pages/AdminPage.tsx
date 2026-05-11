@@ -34,7 +34,8 @@ export default function AdminPage({ user }: { user: any }) {
     }
     
     // Hardcoded Admin Check
-    if (user.email !== "admin@geosport.ge") {
+    const adminEmails = ["admin@geosport.ge", "geotowng@gmail.com"];
+    if (!adminEmails.includes(user.email || "")) {
       navigate("/");
       return;
     }
