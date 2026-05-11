@@ -148,19 +148,45 @@ export default function AdminPage({ user }: { user: any }) {
       streamRef.current = mediaStream;
       if (videoRef.current) videoRef.current.srcObject = mediaStream;
 
-      const peer = new Peer();
+      const peer = new Peer({
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+          ]
+        }
+      });
       peerRef.current = peer;
 
       peer.on('open', async (id) => {
-        await supabase.from('streams').update({ 
-          peer_id: id, 
-          status: StreamStatus.LIVE,
-          updated_at: new Date().toISOString()
-        }).eq('id', stream.id);
-        
-        setActiveStream({ ...stream, status: StreamStatus.LIVE, peer_id: id });
-        setIsBroadcasting(true);
-        fetchStreams();
+        console.log("Broadcaster peer opened with ID:", id);
+        try {
+          const { data: updatedData, error } = await supabase.from('streams').update({ 
+            peer_id: id, 
+            status: StreamStatus.LIVE,
+            updated_at: new Date().toISOString()
+          }).eq('id', stream.id).select().single();
+          
+          if (error) throw error;
+          
+          if (updatedData) {
+            setActiveStream(updatedData);
+            setIsBroadcasting(true);
+            fetchStreams();
+          }
+        } catch (e) {
+          console.error("Failed to update stream status:", e);
+          stopBroadcasting();
+        }
+      });
+
+      peer.on('error', (err) => {
+        console.error('Admin Peer error:', err);
+        // Only stop if it's a fatal error
+        if (err.type === 'server-error' || err.type === 'network') {
+          stopBroadcasting();
+          alert("კავშირის პრობლემა: " + err.message);
+        }
       });
 
       peer.on('call', (call) => {
