@@ -25,6 +25,7 @@ export default function AdminPage({ user }: { user: any }) {
   const peerRef = useRef<Peer | null>(null);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCamOn, setIsCamOn] = useState(true);
+  const [broadcastingType, setBroadcastingType] = useState<"camera" | "screen">("camera");
 
   useEffect(() => {
     if (!user) {
@@ -77,9 +78,30 @@ export default function AdminPage({ user }: { user: any }) {
     }
   }
 
-  async function startBroadcasting(stream: Stream) {
+  async function startBroadcasting(stream: Stream, type: "camera" | "screen" = "camera") {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      let mediaStream: MediaStream;
+      
+      if (type === "screen") {
+        mediaStream = await navigator.mediaDevices.getDisplayMedia({ 
+          audio: true,
+          video: { cursor: "always" } as any
+        });
+        
+        // If system audio is not shared, we might want to also get mic audio
+        if (mediaStream.getAudioTracks().length === 0) {
+          try {
+            const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            micStream.getAudioTracks().forEach(track => mediaStream.addTrack(track));
+          } catch(e) {
+            console.log("Mic access denied or not available for screen share");
+          }
+        }
+      } else {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      }
+
+      setBroadcastingType(type);
       streamRef.current = mediaStream;
       if (videoRef.current) videoRef.current.srcObject = mediaStream;
 
@@ -94,8 +116,15 @@ export default function AdminPage({ user }: { user: any }) {
       });
 
       peer.on('call', (call) => call.answer(mediaStream));
+
+      // Handle stream end (especially for screen share "Stop Sharing" button)
+      mediaStream.getVideoTracks()[0].onended = () => {
+        stopBroadcasting();
+      };
+
     } catch (err) {
-      alert("Error accessing media devices.");
+      alert("მოწყობილობაზე წვდომა ვერ მოხერხდა.");
+      console.error(err);
     }
   }
 
@@ -139,7 +168,10 @@ export default function AdminPage({ user }: { user: any }) {
         <div className="flex-1 grid grid-cols-12 gap-px bg-slate-800 border border-slate-800 rounded overflow-hidden shadow-2xl">
           {/* Main Preview Window */}
           <div className="col-span-12 lg:col-span-8 bg-[#0A0A0A] relative flex flex-col min-h-[400px]">
-            <div className="absolute top-4 left-4 z-10 bg-black/60 px-2 py-1 text-[8px] border border-white/20 uppercase tracking-tighter font-black">PGM OUT: LIVE FEED</div>
+            <div className="absolute top-4 left-4 z-10 bg-black/60 px-2 py-1 text-[8px] border border-white/20 uppercase tracking-tighter font-black flex items-center gap-2">
+              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+              PGM OUT: {broadcastingType === "screen" ? "SCREEN" : "LIVE FEED"}
+            </div>
             <div className="flex-1 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-slate-900 to-black">
               <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover grayscale-[0.2]" />
               
@@ -156,9 +188,16 @@ export default function AdminPage({ user }: { user: any }) {
                 <button onClick={() => { if(streamRef.current) { streamRef.current.getAudioTracks()[0].enabled = !isMicOn; setIsMicOn(!isMicOn); }}} className={cn("p-3 rounded border border-white/10 backdrop-blur-md transition-all", isMicOn ? "bg-white/10" : "bg-red-600 text-white")}>
                   {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
                 </button>
-                <button onClick={() => { if(streamRef.current) { streamRef.current.getVideoTracks()[0].enabled = !isCamOn; setIsCamOn(!isCamOn); }}} className={cn("p-3 rounded border border-white/10 backdrop-blur-md transition-all", isCamOn ? "bg-white/10" : "bg-red-600 text-white")}>
-                  {isCamOn ? <Camera className="w-5 h-5" /> : <CameraOff className="w-5 h-5" />}
-                </button>
+                {broadcastingType === "camera" && (
+                  <button onClick={() => { if(streamRef.current) { streamRef.current.getVideoTracks()[0].enabled = !isCamOn; setIsCamOn(!isCamOn); }}} className={cn("p-3 rounded border border-white/10 backdrop-blur-md transition-all", isCamOn ? "bg-white/10" : "bg-red-600 text-white")}>
+                    {isCamOn ? <Camera className="w-5 h-5" /> : <CameraOff className="w-5 h-5" />}
+                  </button>
+                )}
+                {broadcastingType === "screen" && (
+                  <div className="p-3 rounded border border-blue-500/50 bg-blue-500/20 text-blue-400 backdrop-blur-md">
+                    <MonitorPlay className="w-5 h-5" />
+                  </div>
+                )}
                 <button onClick={stopBroadcasting} className="bg-white text-black p-3 rounded hover:bg-red-600 hover:text-white transition-all shadow-xl">
                   <StopCircle className="w-7 h-7" />
                 </button>
@@ -241,12 +280,24 @@ export default function AdminPage({ user }: { user: any }) {
                   <span>{new Date(stream.start_time).toLocaleDateString()}</span>
                 </div>
                 {stream.status !== StreamStatus.ENDED && (
-                  <button 
-                    onClick={() => startBroadcasting(stream)}
-                    className="bg-white text-black px-3 py-1 rounded text-[9px] font-black hover:bg-red-600 hover:text-white transition-all uppercase"
-                  >
-                    Engage Stream
-                  </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => startBroadcasting(stream, "camera")}
+                        className="bg-white text-black px-3 py-1 rounded text-[9px] font-black hover:bg-red-600 hover:text-white transition-all uppercase flex items-center gap-1"
+                        title="Start Camera Stream"
+                      >
+                        <Camera className="w-3 h-3" />
+                        Cam
+                      </button>
+                      <button 
+                        onClick={() => startBroadcasting(stream, "screen")}
+                        className="bg-slate-800 text-white px-3 py-1 rounded text-[9px] font-black hover:bg-blue-600 transition-all uppercase flex items-center gap-1"
+                        title="Start Screen Share"
+                      >
+                        <MonitorPlay className="w-3 h-3" />
+                        Screen
+                      </button>
+                    </div>
                 )}
               </div>
             </div>
