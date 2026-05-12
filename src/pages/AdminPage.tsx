@@ -124,17 +124,27 @@ export default function AdminPage({ user }: { user: any }) {
         body: JSON.stringify({ roomName, participantName, isBroadcaster: true }),
       });
       
+      if (!tokenResponse.ok) {
+        const errorData = await tokenResponse.json();
+        throw new Error(`Token fetch failed: ${errorData.error || tokenResponse.statusText}`);
+      }
+
       const { token } = await tokenResponse.json();
-      if (!token) throw new Error("Failed to get token");
+      if (!token) throw new Error("Token is empty");
 
       // 2. Connect to Room
       const room = new Room();
       roomRef.current = room;
       
       const livekitUrl = import.meta.env.VITE_LIVEKIT_URL;
-      if (!livekitUrl) throw new Error("VITE_LIVEKIT_URL not configured");
+      if (!livekitUrl) throw new Error("VITE_LIVEKIT_URL setup-ში არ არის მითითებული");
 
-      await room.connect(livekitUrl, token);
+      try {
+        await room.connect(livekitUrl, token);
+      } catch (e: any) {
+        throw new Error(`LiveKit connection failed: ${e.message}`);
+      }
+      
       console.log("Connected to LiveKit room:", room.name);
 
       // 3. Enable tracks
@@ -163,18 +173,25 @@ export default function AdminPage({ user }: { user: any }) {
 
       // Preview locally
       if (videoRef.current) {
-        // Wait a bit for tracks to be published
-        setTimeout(() => {
-          const videoTrack = Array.from(room.localParticipant.videoTrackPublications.values())[0]?.videoTrack as LocalVideoTrack;
-          if (videoTrack) {
-            videoTrack.attach(videoRef.current!);
-          }
-        }, 500);
+        // Find the local video track to attach
+        const videoTrack = Array.from(room.localParticipant.videoTrackPublications.values())
+          .find(p => p.videoTrack)?.videoTrack;
+        
+        if (videoTrack) {
+          videoTrack.attach(videoRef.current);
+        } else {
+          // If not immediate, wait for it
+          room.on(RoomEvent.LocalTrackPublished, (publication) => {
+            if (publication.track?.kind === Track.Kind.Video && videoRef.current) {
+              publication.track.attach(videoRef.current);
+            }
+          });
+        }
       }
 
-    } catch (err) {
-      alert("LiveKit Connection Failed. Check console for details.");
-      console.error(err);
+    } catch (err: any) {
+      alert(`Livekit-თან დაკავშირება ვერ მოხერხდა: ${err.message}`);
+      console.error("LiveKit broadcast error details:", err);
       stopBroadcasting();
     }
   }
