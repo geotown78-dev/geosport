@@ -108,15 +108,20 @@ export default function WatchPage() {
         body: JSON.stringify({ roomName, participantName, isBroadcaster: false }),
       });
       
+      if (!tokenResponse.ok) {
+        const errorData = await tokenResponse.json();
+        throw new Error(`Token fetch failed: ${errorData.error || tokenResponse.statusText}`);
+      }
+
       const { token } = await tokenResponse.json();
-      if (!token) throw new Error("Failed to get viewer token");
+      if (!token) throw new Error("Viewer token is empty");
 
       // 2. Connect to Room
       const room = new Room();
       roomRef.current = room;
 
       const livekitUrl = import.meta.env.VITE_LIVEKIT_URL;
-      if (!livekitUrl) throw new Error("VITE_LIVEKIT_URL not configured");
+      if (!livekitUrl) throw new Error("VITE_LIVEKIT_URL is not configured");
 
       room
         .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
@@ -132,7 +137,12 @@ export default function WatchPage() {
           setConnectionStatus("disconnected");
         });
 
-      await room.connect(livekitUrl, token);
+      try {
+        await room.connect(livekitUrl, token);
+      } catch (e: any) {
+        throw new Error(`Connection to room failed: ${e.message}`);
+      }
+      
       console.log("Connected to LiveKit as viewer");
 
       // Check if tracks are already available
@@ -145,8 +155,9 @@ export default function WatchPage() {
         });
       });
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("LiveKit Viewer Error:", err);
+      // alert(`სტრიმთან კავშირი ვერ მოხერხდა: ${err.message}`);
       setConnectionStatus("error");
     }
   }
