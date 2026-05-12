@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { Stream, StreamStatus, CATEGORIES } from "../constants";
 import { useNavigate } from "react-router-dom";
-import { Plus, Play, Info, Calendar, Radio, Trash2, StopCircle, Video, Settings, Camera, Mic, MicOff, CameraOff, MonitorPlay, Activity, Globe, Users, Shield, Database } from "lucide-react";
+import { Plus, Play, Info, Calendar, Radio, Trash2, StopCircle, Video, Settings, Camera, Mic, MicOff, CameraOff, MonitorPlay, Activity, Globe, Users, Shield, Database, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Room, RoomEvent, LocalVideoTrack, LocalAudioTrack, Track, createLocalVideoTrack, createLocalAudioTrack } from "livekit-client";
+import { Room, RoomEvent, LocalVideoTrack, LocalAudioTrack, Track, createLocalVideoTrack, createLocalAudioTrack, VideoPresets } from "livekit-client";
 import { cn } from "../lib/utils";
 
 export default function AdminPage({ user }: { user: any }) {
@@ -26,6 +26,7 @@ export default function AdminPage({ user }: { user: any }) {
   const [isCamOn, setIsCamOn] = useState(true);
   const [broadcastingType, setBroadcastingType] = useState<"camera" | "screen">("screen");
   const [selectedSource, setSelectedSource] = useState<"camera" | "screen">("screen");
+  const [isHighQuality, setIsHighQuality] = useState(true);
 
   useEffect(() => {
     if (!user) {
@@ -93,7 +94,9 @@ export default function AdminPage({ user }: { user: any }) {
         await roomRef.current.localParticipant.setScreenShareEnabled(true, { audio: true });
       } else {
         await roomRef.current.localParticipant.setScreenShareEnabled(false);
-        await roomRef.current.localParticipant.setCameraEnabled(true);
+        await roomRef.current.localParticipant.setCameraEnabled(true, {
+          resolution: isHighQuality ? VideoPresets.h1080.resolution : undefined,
+        });
         await roomRef.current.localParticipant.setMicrophoneEnabled(true);
       }
 
@@ -151,7 +154,9 @@ export default function AdminPage({ user }: { user: any }) {
       if (type === "screen") {
         await room.localParticipant.setScreenShareEnabled(true, { audio: true });
       } else {
-        await room.localParticipant.setCameraEnabled(true);
+        await room.localParticipant.setCameraEnabled(true, {
+          resolution: isHighQuality ? VideoPresets.h1080.resolution : undefined,
+        });
         await room.localParticipant.setMicrophoneEnabled(true);
       }
 
@@ -403,6 +408,17 @@ export default function AdminPage({ user }: { user: any }) {
               <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-xl px-4">
                 <div className="bg-black/60 backdrop-blur-3xl border border-white/10 p-2 rounded-2xl flex items-center justify-between shadow-2xl">
                   <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
+                    <button 
+                      onClick={() => setIsHighQuality(!isHighQuality)}
+                      className={cn(
+                        "px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2",
+                        isHighQuality ? "text-green-400 bg-green-400/10 border border-green-400/20" : "text-slate-500 hover:text-white"
+                      )}
+                    >
+                      <Zap className={cn("w-3 h-3", isHighQuality && "fill-current")} />
+                      <span>{isHighQuality ? "1080p 60fps" : "Auto Quality"}</span>
+                    </button>
+                    <div className="w-px h-4 bg-white/10 mx-2 self-center" />
                     <button 
                       onClick={() => switchSource("camera")}
                       className={cn(
