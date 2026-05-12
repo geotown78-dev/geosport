@@ -27,6 +27,10 @@ async function startServer() {
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
 
+    console.log("Token request for room:", roomName);
+    console.log("API Key present:", !!apiKey, apiKey?.substring(0, 5) + "...");
+    console.log("API Secret present:", !!apiSecret);
+
     if (!apiKey || !apiSecret) {
       return res.status(500).json({ error: "LiveKit credentials not configured" });
     }
